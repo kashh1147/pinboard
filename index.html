@@ -1,0 +1,515 @@
+import { useState, useRef, useEffect } from "react";
+
+const NCOL = [
+  { bg:"#fef08a", bd:"#eab308", sh:"#ca9c04" },
+  { bg:"#86efac", bd:"#22c55e", sh:"#16a34a" },
+  { bg:"#93c5fd", bd:"#3b82f6", sh:"#2563eb" },
+  { bg:"#f9a8d4", bd:"#ec4899", sh:"#db2777" },
+  { bg:"#fca5a5", bd:"#ef4444", sh:"#dc2626" },
+  { bg:"#c4b5fd", bd:"#8b5cf6", sh:"#7c3aed" },
+  { bg:"#fdba74", bd:"#f97316", sh:"#ea580c" },
+  { bg:"#a5f3fc", bd:"#06b6d4", sh:"#0891b2" },
+];
+const ACCENTS = ["#1e3a5f","#c17f24","#2d6a4f","#7c3aed","#db2777","#0891b2","#dc2626","#ea580c","#166534","#92400e"];
+const PSTYLE = {
+  HIGH:{ bg:"#fee2e2", tx:"#b91c1c", bd:"#fca5a5" },
+  MED: { bg:"#fef9c3", tx:"#92400e", bd:"#fde68a" },
+  LOW: { bg:"#dcfce7", tx:"#15803d", bd:"#86efac" },
+};
+const INIT_LANES = [
+  { name:"To Do",         accent:"#1e3a5f", bg:"#e8eef5" },
+  { name:"In Progress",   accent:"#c17f24", bg:"#fdf3e3" },
+  { name:"Done",          accent:"#2d6a4f", bg:"#eaf3ee" },
+  { name:"Interview Prep",accent:"#7c3aed", bg:"#f0ecfa" },
+  { name:"Schedule",      accent:"#db2877", bg:"#fce8f0" },
+];
+const INIT_NOTES = [
+  { id:1, lane:"To Do",          text:"Review BIM coordination drawings", priority:"HIGH", ci:4, x:30,  y:70,  rot:-2   },
+  { id:2, lane:"To Do",          text:"Update project schedule in P6",     priority:"MED",  ci:6, x:210, y:90,  rot:1.5  },
+  { id:3, lane:"In Progress",    text:"Stakeholder meeting prep deck",      priority:"HIGH", ci:4, x:30,  y:70,  rot:-1   },
+  { id:4, lane:"Done",           text:"Morning standup ✓",                 priority:"LOW",  ci:1, x:30,  y:70,  rot:-1.5 },
+  { id:5, lane:"Interview Prep", text:"STAR: Led 3-week schedule compression", priority:"MED", ci:7, x:30, y:70, rot:1  },
+  { id:6, lane:"Schedule",       text:"9:00 AM — BIM meeting",             priority:"HIGH", ci:5, x:30,  y:70,  rot:-1   },
+];
+const SKEY = "kp_v4";
+let UID = 500;
+const nid = () => ++UID;
+const rrot = () => (Math.random()-0.5)*5;
+const rpos = () => ({ x: 30+Math.random()*160, y: 70+Math.random()*90 });
+
+// ── Note ──────────────────────────────────────────────────────
+function Note({ note, onMove, onDel, onEdit, onColor, onPri }) {
+  const c = NCOL[note.ci];
+  const [drag, setDrag] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [txt, setTxt] = useState(note.text);
+  const ref = useRef(); const off = useRef();
+
+  function mdown(e) {
+    if (editing) return;
+    e.preventDefault(); e.stopPropagation();
+    const r = ref.current.getBoundingClientRect();
+    off.current = { x: e.clientX - r.left, y: e.clientY - r.top };
+    setDrag(true);
+    const mm = e2 => {
+      const p = ref.current?.parentElement?.getBoundingClientRect();
+      if (p) onMove(note.id, e2.clientX - p.left - off.current.x, e2.clientY - p.top - off.current.y);
+    };
+    const mu = () => { setDrag(false); window.removeEventListener("mousemove",mm); window.removeEventListener("mouseup",mu); };
+    window.addEventListener("mousemove", mm);
+    window.addEventListener("mouseup", mu);
+  }
+
+  return (
+    <div ref={ref} onMouseDown={mdown} style={{
+      position:"absolute", left:note.x, top:note.y,
+      width:155, minHeight:160,
+      background:c.bg, border:`2px solid ${c.bd}`, borderRadius:4,
+      boxShadow: note.flash ? `0 0 0 3px #7c3aed,5px 9px 24px #0006`
+                : drag      ? `8px 14px 32px #0007`
+                :               `3px 5px 14px #0003`,
+      transform:`rotate(${note.rot}deg) scale(${drag?1.07:1})`,
+      transition: drag ? "box-shadow .1s,transform .1s" : "box-shadow .3s,transform .3s",
+      cursor: drag ? "grabbing" : "grab",
+      zIndex: drag ? 9999 : note.flash ? 100 : 2,
+      userSelect:"none", display:"flex", flexDirection:"column",
+    }}>
+      {/* pin */}
+      <div style={{position:"absolute",top:-13,left:"50%",transform:"translateX(-50%)"}}>
+        <div style={{width:16,height:16,borderRadius:"50%",background:c.sh,border:"2px solid #0004",boxShadow:"0 3px 6px #0005"}}/>
+        <div style={{width:2,height:9,background:"#999",margin:"0 auto",borderRadius:1}}/>
+      </div>
+
+      {/* color dots + delete */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"18px 8px 4px"}}>
+        <div style={{display:"flex",gap:4}}>
+          {NCOL.slice(0,6).map((col,i)=>(
+            <div key={i}
+              onMouseDown={e=>{e.stopPropagation();e.preventDefault();}}
+              onClick={e=>{e.stopPropagation();onColor(note.id,i);}}
+              style={{width:10,height:10,borderRadius:"50%",background:col.bg,border:`1.5px solid ${col.bd}`,cursor:"pointer",
+                transform:note.ci===i?"scale(1.45)":"scale(1)",transition:"transform .12s",opacity:note.ci===i?1:0.5}}/>
+          ))}
+        </div>
+        <button onMouseDown={e=>{e.stopPropagation();e.preventDefault();}} onClick={e=>{e.stopPropagation();onDel(note.id);}}
+          style={{background:"#0001",border:"none",cursor:"pointer",fontSize:12,color:"#555",width:18,height:18,borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+      </div>
+
+      {/* priority buttons */}
+      <div style={{display:"flex",gap:4,padding:"0 8px 6px"}}
+        onMouseDown={e=>{e.stopPropagation();e.preventDefault();}}
+        onClick={e=>e.stopPropagation()}>
+        {["HIGH","MED","LOW"].map(p=>{
+          const ps = PSTYLE[p];
+          const active = note.priority === p;
+          return (
+            <button key={p}
+              onMouseDown={e=>{e.stopPropagation();e.preventDefault();}}
+              onClick={e=>{e.stopPropagation();e.preventDefault();onPri(note.id,p);}}
+              style={{flex:1,fontSize:9,fontWeight:700,cursor:"pointer",
+                border:`1.5px solid ${ps.bd}`,borderRadius:5,padding:"3px 1px",
+                background: active ? ps.bg : "rgba(255,255,255,0.35)",
+                color: active ? ps.tx : "#999",
+                transform: active ? "scale(1.05)" : "scale(1)",
+                transition:"all .15s"}}>
+              {p==="HIGH"?"🔴Hi":p==="MED"?"🟡Md":"🟢Lo"}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* text */}
+      <div style={{flex:1,padding:"0 8px 6px"}}
+        onDoubleClick={e=>{e.stopPropagation();setEditing(true);setTxt(note.text);}}>
+        {editing
+          ? <textarea autoFocus value={txt} onChange={e=>setTxt(e.target.value)}
+              onBlur={()=>{setEditing(false);onEdit(note.id,txt);}}
+              onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){setEditing(false);onEdit(note.id,txt);}}}
+              onMouseDown={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()}
+              style={{width:"100%",minHeight:60,border:"none",background:"rgba(255,255,255,0.5)",borderRadius:4,
+                resize:"none",fontSize:12,fontFamily:"inherit",color:"#111",lineHeight:1.5,outline:"none",
+                cursor:"text",boxSizing:"border-box",padding:"4px"}}/>
+          : <div style={{fontSize:12,color:"#1a1a1a",lineHeight:1.55,minHeight:55,whiteSpace:"pre-wrap"}}>{note.text}</div>
+        }
+      </div>
+      {!editing && <div style={{fontSize:9,color:"#888",padding:"0 8px 5px",textAlign:"right"}}>dbl-tap to edit</div>}
+    </div>
+  );
+}
+
+// ── Infinite Canvas ───────────────────────────────────────────
+function Canvas({ lane, notes, onClose, onMove, onDel, onEdit, onColor, onPri, onAdd }) {
+  const [pan, setPan] = useState({x:80,y:80});
+  const [zoom, setZoom] = useState(1);
+  const [panning, setPanning] = useState(false);
+  const pr = useRef(); const bg = useRef();
+
+  function wheel(e) { e.preventDefault(); setZoom(z=>Math.min(2.5,Math.max(0.2,z*(e.deltaY<0?1.12:0.9)))); }
+  function bgDown(e) {
+    if (e.target !== bg.current) return;
+    e.preventDefault();
+    pr.current = {sx:e.clientX-pan.x, sy:e.clientY-pan.y};
+    setPanning(true);
+    const mm = e2 => setPan({x:e2.clientX-pr.current.sx, y:e2.clientY-pr.current.sy});
+    const mu = () => { setPanning(false); window.removeEventListener("mousemove",mm); window.removeEventListener("mouseup",mu); };
+    window.addEventListener("mousemove",mm); window.addEventListener("mouseup",mu);
+  }
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:8000,display:"flex",flexDirection:"column",animation:"canvasIn .3s ease"}}>
+      {/* top bar */}
+      <div style={{background:lane.accent,padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,boxShadow:"0 2px 12px #0005",zIndex:1}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <button onClick={onClose} style={{background:"rgba(255,255,255,0.2)",border:"none",borderRadius:8,padding:"6px 14px",color:"#fff",cursor:"pointer",fontSize:13,fontWeight:600}}>← Back</button>
+          <div>
+            <div style={{fontSize:15,fontWeight:600,color:"#fff"}}>📌 {lane.name}</div>
+            <div style={{fontSize:10,color:"rgba(255,255,255,0.6)"}}>{notes.length} notes · scroll=zoom · drag bg=pan</div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <button onClick={()=>setZoom(z=>Math.min(2.5,z*1.15))} style={{background:"rgba(255,255,255,0.2)",border:"none",borderRadius:6,width:30,height:30,color:"#fff",cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+          <span style={{fontSize:12,color:"rgba(255,255,255,0.85)",minWidth:44,textAlign:"center",fontWeight:600}}>{Math.round(zoom*100)}%</span>
+          <button onClick={()=>setZoom(z=>Math.max(0.2,z*0.85))} style={{background:"rgba(255,255,255,0.2)",border:"none",borderRadius:6,width:30,height:30,color:"#fff",cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+          <button onClick={()=>{setPan({x:80,y:80});setZoom(1);}} style={{background:"rgba(255,255,255,0.15)",border:"none",borderRadius:6,padding:"6px 10px",color:"#fff",cursor:"pointer",fontSize:11}}>↺ Reset</button>
+          <button onClick={()=>onAdd(lane.name,(300-pan.x)/zoom,(200-pan.y)/zoom)}
+            style={{background:"rgba(255,255,255,0.25)",border:"2px solid rgba(255,255,255,0.4)",borderRadius:8,padding:"6px 16px",color:"#fff",cursor:"pointer",fontSize:13,fontWeight:700}}>+ Add Note</button>
+        </div>
+      </div>
+
+      {/* cork canvas */}
+      <div ref={bg} onWheel={wheel} onMouseDown={bgDown}
+        style={{flex:1,overflow:"hidden",cursor:panning?"grabbing":"grab",position:"relative",
+          background:"#2c2416",
+          backgroundImage:`radial-gradient(circle,#8b691488 1.5px,transparent 1.5px)`,
+          backgroundSize:`${30*zoom}px ${30*zoom}px`,
+          backgroundPosition:`${pan.x}px ${pan.y}px`}}>
+        <div style={{position:"absolute",left:pan.x,top:pan.y,transformOrigin:"0 0",transform:`scale(${zoom})`,width:6000,height:5000}}>
+          {notes.map(n=>(
+            <Note key={n.id} note={n} onMove={onMove} onDel={onDel} onEdit={onEdit} onColor={onColor} onPri={onPri}/>
+          ))}
+        </div>
+        {notes.length===0&&(
+          <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:10,pointerEvents:"none"}}>
+            <div style={{fontSize:52,opacity:0.25}}>📌</div>
+            <div style={{fontSize:14,color:"rgba(255,255,255,0.2)"}}>Click "+ Add Note" to start</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Add Note Modal ────────────────────────────────────────────
+function NoteModal({ lanes, defLane, onOk, onCancel }) {
+  const [text, setText] = useState("");
+  const [lane, setLane] = useState(defLane || lanes[0]?.name || "");
+  const [ci, setCi] = useState(Math.floor(Math.random()*8));
+  const [pri, setPri] = useState("MED");
+  const c = NCOL[ci];
+  return (
+    <div onClick={onCancel} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.72)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:9500,padding:"1rem"}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:c.bg,border:`2px solid ${c.bd}`,borderRadius:8,padding:"1.5rem",width:"min(310px,92vw)",boxShadow:"0 24px 70px #0009",animation:"popIn .22s cubic-bezier(.34,1.56,.64,1)"}}>
+        <div style={{textAlign:"center",marginBottom:10}}>
+          <div style={{width:17,height:17,borderRadius:"50%",background:c.sh,border:"2px solid #0003",margin:"0 auto 4px",boxShadow:"0 3px 7px #0005"}}/>
+        </div>
+        <div style={{fontSize:12,color:"#555",fontWeight:700,marginBottom:10}}>📌 New Note → {lane}</div>
+        {/* colors */}
+        <div style={{display:"flex",gap:6,marginBottom:12}}>
+          {NCOL.map((col,i)=>(
+            <div key={i} onClick={()=>setCi(i)} style={{width:22,height:22,borderRadius:"50%",background:col.bg,border:`2px solid ${ci===i?col.sh:col.bd}`,cursor:"pointer",transform:ci===i?"scale(1.35)":"scale(1)",transition:"transform .15s"}}/>
+          ))}
+        </div>
+        {/* lane */}
+        <select value={lane} onChange={e=>setLane(e.target.value)} style={{width:"100%",fontSize:12,background:"rgba(255,255,255,0.65)",border:"1px solid #0002",borderRadius:6,padding:"7px 8px",marginBottom:8,color:"#222"}}>
+          {lanes.map(l=><option key={l.name} value={l.name}>{l.name}</option>)}
+        </select>
+        {/* priority */}
+        <div style={{display:"flex",gap:6,marginBottom:10}}>
+          {["HIGH","MED","LOW"].map(p=>{
+            const ps=PSTYLE[p]; const active=pri===p;
+            return (
+              <button key={p} onClick={()=>setPri(p)} style={{flex:1,fontSize:11,fontWeight:700,cursor:"pointer",border:`2px solid ${ps.bd}`,borderRadius:7,padding:"6px 4px",background:active?ps.bg:"rgba(255,255,255,0.4)",color:active?ps.tx:"#888",transition:"all .15s"}}>
+                {p==="HIGH"?"🔴 High":p==="MED"?"🟡 Med":"🟢 Low"}
+              </button>
+            );
+          })}
+        </div>
+        {/* text */}
+        <textarea autoFocus value={text} onChange={e=>setText(e.target.value)}
+          onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&text.trim()&&onOk({text,lane,ci,pri})}
+          placeholder="Write your note here..." rows={3}
+          style={{width:"100%",border:"1px solid #0002",background:"rgba(255,255,255,0.5)",borderRadius:6,padding:"8px",fontSize:13,fontFamily:"inherit",color:"#222",resize:"none",outline:"none",lineHeight:1.55,boxSizing:"border-box"}}/>
+        <div style={{display:"flex",gap:8,marginTop:10}}>
+          <button onClick={()=>text.trim()&&onOk({text,lane,ci,pri})} style={{flex:1,background:c.sh,border:"none",borderRadius:7,padding:"9px",fontSize:13,color:"#fff",cursor:"pointer",fontWeight:700}}>📌 Pin it!</button>
+          <button onClick={onCancel} style={{background:"#0001",border:"none",borderRadius:7,padding:"9px 14px",fontSize:13,color:"#555",cursor:"pointer"}}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Add Lane Modal ────────────────────────────────────────────
+function LaneModal({ onOk, onCancel }) {
+  const [name, setName] = useState("");
+  const [accent, setAccent] = useState(ACCENTS[0]);
+  const BG = {"#1e3a5f":"#e8eef5","#c17f24":"#fdf3e3","#2d6a4f":"#eaf3ee","#7c3aed":"#f0ecfa","#db2877":"#fce8f0","#0891b2":"#e0f7fa","#dc2626":"#fef2f2","#ea580c":"#fff7ed","#166534":"#f0fdf4","#92400e":"#fffbeb"};
+  return (
+    <div onClick={onCancel} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:9500,padding:"1rem"}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"#2d2010",border:"1px solid #7a5c3099",borderRadius:14,padding:"1.5rem",width:"min(310px,92vw)",boxShadow:"0 24px 70px #0009",animation:"popIn .22s cubic-bezier(.34,1.56,.64,1)"}}>
+        <div style={{fontSize:16,fontWeight:700,color:"#f5e6c8",marginBottom:14}}>🗂 New Lane</div>
+        <input autoFocus value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&name.trim()&&onOk(name,accent,BG[accent]||"#f5f5f0")}
+          placeholder="e.g. Blocked, Resources, Ideas..."
+          style={{width:"100%",background:"#1a1208",border:"1px solid #7a5c3066",borderRadius:8,padding:"9px 12px",fontSize:13,color:"#e8d5b0",outline:"none",boxSizing:"border-box",marginBottom:14}}/>
+        <div style={{fontSize:11,color:"#c9a96e",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.06em"}}>Pick Color</div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+          {ACCENTS.map(col=>(
+            <div key={col} onClick={()=>setAccent(col)} style={{width:28,height:28,borderRadius:"50%",background:col,cursor:"pointer",border:accent===col?"3px solid #fff":"2px solid rgba(255,255,255,0.2)",transform:accent===col?"scale(1.2)":"scale(1)",transition:"all .15s"}}/>
+          ))}
+        </div>
+        <div style={{background:accent,borderRadius:8,padding:"8px 14px",marginBottom:14}}>
+          <span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{name||"Lane preview"}</span>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>name.trim()&&onOk(name,accent,BG[accent]||"#f5f5f0")} style={{flex:1,background:name.trim()?accent:"#3d2e1a",border:"none",borderRadius:8,padding:"9px",fontSize:13,color:"#fff",cursor:name.trim()?"pointer":"default",fontWeight:700,transition:"background .2s"}}>+ Create Lane</button>
+          <button onClick={onCancel} style={{background:"#fff1",border:"1px solid #fff2",borderRadius:8,padding:"9px 16px",fontSize:13,color:"#c9a96e",cursor:"pointer"}}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main ──────────────────────────────────────────────────────
+export default function App() {
+  const [lanes, setLanes] = useState(INIT_LANES);
+  const [notes, setNotes] = useState(INIT_NOTES);
+  const [canvas, setCanvas] = useState(null);
+  const [noteModal, setNoteModal] = useState(null);
+  const [laneModal, setLaneModal] = useState(false);
+  const [saveSt, setSaveSt] = useState("idle");
+  const [lastSaved, setLastSaved] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [msgs, setMsgs] = useState([{role:"ai",text:"👋 Hey Kashyap!\n\nClick any lane card to open its infinite canvas.\n\nTry telling me:\n• \"Add review Revit model to To Do high priority\"\n• \"What should I focus on?\"\n• \"Add new lane called Blocked\""}]);
+  const [inp, setInp] = useState("");
+  const [aiLoad, setAiLoad] = useState(false);
+  const [unread, setUnread] = useState(0);
+  const stimer = useRef(); const chatRef = useRef(); const inpRef = useRef();
+  const now = new Date();
+  const todayStr = now.toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
+
+  useEffect(()=>{
+    (async()=>{
+      try{ const r=await window.storage.get(SKEY); if(r?.value){const d=JSON.parse(r.value);if(d.notes?.length)setNotes(d.notes);if(d.lanes?.length)setLanes(d.lanes);setLastSaved(new Date().toLocaleTimeString());} }catch{}
+      setLoaded(true);
+    })();
+  },[]);
+
+  useEffect(()=>{
+    if(!loaded)return;
+    clearTimeout(stimer.current); setSaveSt("saving");
+    stimer.current=setTimeout(async()=>{
+      try{ await window.storage.set(SKEY,JSON.stringify({notes:notes.map(({flash,...n})=>n),lanes})); setSaveSt("saved"); setLastSaved(new Date().toLocaleTimeString()); setTimeout(()=>setSaveSt("idle"),2000); }
+      catch{ setSaveSt("error"); }
+    },900);
+    return()=>clearTimeout(stimer.current);
+  },[notes,lanes,loaded]);
+
+  useEffect(()=>{ if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight; },[msgs]);
+  useEffect(()=>{ if(chatOpen){setUnread(0);setTimeout(()=>inpRef.current?.focus(),100);} },[chatOpen]);
+
+  const mv=(id,x,y)=>setNotes(p=>p.map(n=>n.id===id?{...n,x,y}:n));
+  const dl=id=>setNotes(p=>p.filter(n=>n.id!==id));
+  const ed=(id,text)=>setNotes(p=>p.map(n=>n.id===id?{...n,text}:n));
+  const cl=(id,ci)=>setNotes(p=>p.map(n=>n.id===id?{...n,ci}:n));
+  const pr=(id,priority)=>setNotes(p=>p.map(n=>n.id===id?{...n,priority}:n));
+  function flash(id){ setNotes(p=>p.map(n=>n.id===id?{...n,flash:true}:n)); setTimeout(()=>setNotes(p=>p.map(n=>n.id===id?{...n,flash:false}:n)),2000); }
+
+  function addNote({text,lane,ci,pri},x,y){
+    const id=nid(); const pos=x!=null?{x,y}:rpos();
+    setNotes(p=>[...p,{id,lane,text,priority:pri,ci,rot:rrot(),...pos}]);
+    setNoteModal(null); setTimeout(()=>flash(id),200);
+  }
+
+  function addLane(name,accent,bg){
+    setLanes(p=>[...p,{name,accent,bg}]); setLaneModal(false);
+  }
+  function delLane(name){
+    if(!window.confirm(`Delete lane "${name}" and all its notes?`))return;
+    setLanes(p=>p.filter(l=>l.name!==name)); setNotes(p=>p.filter(n=>n.lane!==name));
+  }
+
+  function exportBoard(){
+    const blob=new Blob([JSON.stringify({notes:notes.map(({flash,...n})=>n),lanes},null,2)],{type:"application/json"});
+    const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`pinboard_${new Date().toISOString().slice(0,10)}.json`;a.click();URL.revokeObjectURL(url);
+  }
+
+  async function sendMsg(){
+    const msg=inp.trim(); if(!msg||aiLoad)return;
+    setInp(""); setMsgs(p=>[...p,{role:"user",text:msg}]); setAiLoad(true);
+    const board=lanes.map(l=>{const ln=notes.filter(n=>n.lane===l.name);return `${l.name}: ${ln.length?ln.map(n=>`"${n.text}"[${n.priority}]`).join(", "):"empty"}`;}).join("\n");
+    const sys=`You are an AI assistant in a PM pinboard for Kashyap Joshi, Construction PM/BIM-VDC pro targeting Gilbane/Suffolk/Skanska.
+Board:\n${board}\nLanes: ${lanes.map(l=>l.name).join("|")}\nToday: ${todayStr}, Hour: ${now.getHours()}
+Respond ONLY valid JSON: {"reply":"...","actions":[{"type":"add","lane":"...","text":"...","priority":"HIGH|MED|LOW","ci":0},{"type":"move","match":"...","toLane":"..."},{"type":"delete","match":"..."},{"type":"highlight","match":"..."},{"type":"addLane","name":"...","accent":"#hex"}]}
+Actions=[]. Reply max 3 sentences. ci: 0=yellow,1=green,2=blue,3=pink,4=red,5=purple,6=orange,7=cyan. HIGH→4,MED→6,LOW→1.`;
+    try{
+      const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,system:sys,messages:[{role:"user",content:msg}]})});
+      const data=await res.json(); const raw=data.content?.[0]?.text||"{}";
+      let parsed; try{parsed=JSON.parse(raw.replace(/```json|```/g,"").trim());}catch{parsed={reply:raw,actions:[]};}
+      const acts=parsed.actions||[]; let log=[];
+      acts.forEach(a=>{
+        if(a.type==="add"){const id=nid();setNotes(p=>[...p,{id,lane:a.lane||lanes[0].name,text:a.text,priority:a.priority||"MED",ci:a.ci??6,...rpos(),rot:rrot()}]);log.push(`📌 Added to ${a.lane}`);setTimeout(()=>flash(id),300);}
+        else if(a.type==="move"){setNotes(p=>{const f=p.find(n=>n.text.toLowerCase().includes(a.match?.toLowerCase()));if(f){log.push(`➡️ Moved to ${a.toLane}`);return p.map(n=>n.id===f.id?{...n,lane:a.toLane}:n);}return p;});}
+        else if(a.type==="delete"){setNotes(p=>{const f=p.find(n=>n.text.toLowerCase().includes(a.match?.toLowerCase()));if(f)log.push("🗑 Deleted");return f?p.filter(n=>n.id!==f.id):p;});}
+        else if(a.type==="highlight"){setNotes(p=>{const f=p.find(n=>n.text.toLowerCase().includes(a.match?.toLowerCase()));if(f){log.push("🔦 Highlighted");setTimeout(()=>flash(f.id),100);}return p;});}
+        else if(a.type==="addLane"){const acc=a.accent||ACCENTS[Math.floor(Math.random()*ACCENTS.length)];const BG={"#1e3a5f":"#e8eef5","#c17f24":"#fdf3e3","#2d6a4f":"#eaf3ee","#7c3aed":"#f0ecfa","#db2877":"#fce8f0","#0891b2":"#e0f7fa","#dc2626":"#fef2f2","#ea580c":"#fff7ed","#166534":"#f0fdf4","#92400e":"#fffbeb"};setLanes(p=>[...p,{name:a.name,accent:acc,bg:BG[acc]||"#f5f5f0"}]);log.push(`🗂 Lane "${a.name}" added`);}
+      });
+      const reply=(parsed.reply||"Done!")+(log.length?"\n\n"+log.join(" · "):"");
+      setMsgs(p=>[...p,{role:"ai",text:reply}]);
+      if(!chatOpen)setUnread(u=>u+1);
+    }catch{setMsgs(p=>[...p,{role:"ai",text:"Something went wrong. Try again!"}]);}
+    setAiLoad(false);
+  }
+
+  const saveLabel={idle:lastSaved?`Saved ${lastSaved}`:"Auto-save on",saving:"Saving…",saved:`Saved ${lastSaved}`,error:"Save failed"}[saveSt];
+  const saveIcon={idle:"☁️",saving:"⏳",saved:"✅",error:"❌"}[saveSt];
+  const highCnt=notes.filter(n=>n.priority==="HIGH"&&n.lane!=="Done").length;
+  const doneCnt=notes.filter(n=>n.lane==="Done").length;
+  const QUICK=["Focus?","What's urgent?","Board summary","Interview tip"];
+
+  if(canvas){
+    return(
+      <>
+        <Canvas lane={canvas} notes={notes.filter(n=>n.lane===canvas.name)}
+          onClose={()=>setCanvas(null)} onMove={mv} onDel={dl} onEdit={ed} onColor={cl} onPri={pr}
+          onAdd={(lane,x,y)=>setNoteModal({defLane:lane,x,y})}/>
+        {noteModal&&<NoteModal lanes={lanes} defLane={noteModal.defLane} onOk={d=>addNote(d,noteModal.x,noteModal.y)} onCancel={()=>setNoteModal(null)}/>}
+      </>
+    );
+  }
+
+  return(
+    <div style={{background:"#2c2416",minHeight:"100vh",fontFamily:"'Segoe UI',sans-serif"}}>
+
+      {/* header */}
+      <div style={{background:"linear-gradient(180deg,#3d2e1a 0%,#5c4423 100%)",padding:"0.8rem 1.25rem",borderBottom:"4px solid #7a5c30",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+        <div>
+          <div style={{fontSize:10,color:"#c9a96e",letterSpacing:"0.1em",textTransform:"uppercase"}}>PM · AEC · Architecture</div>
+          <div style={{fontSize:18,fontWeight:600,color:"#f5e6c8"}}>📌 Daily Pinboard</div>
+          <div style={{fontSize:11,color:"#a08050"}}>{todayStr}</div>
+        </div>
+        <div style={{display:"flex",gap:7,alignItems:"center",flexWrap:"wrap"}}>
+          <div style={{background:saveSt==="saved"?"#86efac22":"#fff1",border:`1px solid ${saveSt==="saved"?"#22c55e44":"#fff2"}`,borderRadius:7,padding:"4px 10px",fontSize:11,color:saveSt==="saved"?"#86efac":"#c9a96e",display:"flex",alignItems:"center",gap:4}}>
+            <span style={{display:"inline-block",animation:saveSt==="saving"?"spin 1s linear infinite":"none"}}>{saveIcon}</span>{saveLabel}
+          </div>
+          {highCnt>0&&<div style={{background:"#fca5a522",border:"1px solid #ef444455",borderRadius:7,padding:"4px 10px",fontSize:11,color:"#fca5a5",animation:"pulse 2s infinite"}}>🚨 {highCnt} urgent</div>}
+          <div style={{background:"#86efac22",border:"1px solid #22c55e44",borderRadius:7,padding:"4px 10px",fontSize:11,color:"#86efac"}}>✓ {doneCnt} done</div>
+          <button onClick={exportBoard} style={{background:"#fff1",border:"1px solid #fff2",borderRadius:7,padding:"5px 10px",fontSize:11,color:"#c9a96e",cursor:"pointer"}}>⬇ Export</button>
+          <button onClick={()=>setLaneModal(true)} style={{background:"linear-gradient(135deg,#1e3a5f,#2d5f9e)",border:"none",borderRadius:7,padding:"6px 13px",fontSize:12,color:"#fff",cursor:"pointer",fontWeight:600}}>+ New Lane</button>
+          <button onClick={()=>setNoteModal({defLane:lanes[0]?.name})} style={{background:"linear-gradient(135deg,#c17f24,#f59e0b)",border:"none",borderRadius:7,padding:"6px 13px",fontSize:12,color:"#fff",cursor:"pointer",fontWeight:600}}>+ Note</button>
+        </div>
+      </div>
+
+      {/* board */}
+      <div style={{padding:"1.25rem",display:"flex",gap:"0.9rem",overflowX:"auto",alignItems:"flex-start",minHeight:"calc(100vh - 90px)",backgroundImage:"radial-gradient(circle,#8b691488 1px,transparent 1px)",backgroundSize:"28px 28px",paddingBottom:"100px"}}>
+        {lanes.map(lane=>{
+          const lnotes=notes.filter(n=>n.lane===lane.name);
+          const hi=lnotes.filter(n=>n.priority==="HIGH").length;
+          return(
+            <div key={lane.name} style={{minWidth:195,maxWidth:210,display:"flex",flexDirection:"column",flexShrink:0}}>
+              {/* lane header */}
+              <div style={{background:lane.accent,borderRadius:"10px 10px 0 0",padding:"9px 10px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <button onClick={()=>setCanvas(lane)} style={{background:"none",border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:5,flex:1,padding:0}}>
+                  <span style={{fontSize:12,fontWeight:600,color:"#fff"}}>{lane.name}</span>
+                  <span style={{fontSize:10,color:"rgba(255,255,255,0.5)"}}>↗</span>
+                </button>
+                <div style={{display:"flex",alignItems:"center",gap:3}}>
+                  {hi>0&&<span style={{fontSize:9,background:"rgba(220,38,38,0.3)",color:"#fca5a5",borderRadius:8,padding:"1px 5px"}}>🔴{hi}</span>}
+                  <span style={{fontSize:10,background:"rgba(255,255,255,0.2)",color:"#fff",borderRadius:10,padding:"1px 6px"}}>{lnotes.length}</span>
+                  <button onClick={()=>setNoteModal({defLane:lane.name})} style={{background:"rgba(255,255,255,0.2)",border:"none",borderRadius:4,color:"#fff",fontSize:16,cursor:"pointer",width:20,height:20,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                  <button onClick={()=>delLane(lane.name)} style={{background:"rgba(255,255,255,0.1)",border:"none",borderRadius:4,color:"rgba(255,255,255,0.4)",fontSize:10,cursor:"pointer",width:16,height:16,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+                </div>
+              </div>
+              {/* lane preview */}
+              <div onClick={()=>setCanvas(lane)} style={{background:lane.bg,border:`1px solid ${lane.accent}33`,borderTop:"none",borderRadius:"0 0 10px 10px",flex:1,minHeight:300,position:"relative",overflow:"hidden",cursor:"pointer",backgroundImage:`repeating-linear-gradient(0deg,transparent,transparent 27px,${lane.accent}11 27px,${lane.accent}11 28px)`}}>
+                {lnotes.slice(0,4).map((n,i)=>{
+                  const c=NCOL[n.ci];
+                  return(
+                    <div key={n.id} style={{position:"absolute",left:8+(i%2)*95,top:18+Math.floor(i/2)*120,width:82,minHeight:75,background:c.bg,border:`1px solid ${c.bd}`,borderRadius:3,padding:"12px 6px 6px",fontSize:10,color:"#222",lineHeight:1.4,transform:`rotate(${n.rot*0.4}deg)`,boxShadow:"2px 3px 7px #0002",pointerEvents:"none",overflow:"hidden"}}>
+                      <div style={{position:"absolute",top:-6,left:"50%",transform:"translateX(-50%)",width:9,height:9,borderRadius:"50%",background:c.sh,border:"1px solid #0002"}}/>
+                      <div style={{fontSize:8,marginBottom:2,color:n.priority==="HIGH"?"#b91c1c":n.priority==="MED"?"#92400e":"#15803d",fontWeight:700}}>{n.priority}</div>
+                      {n.text.slice(0,38)}{n.text.length>38?"...":""}
+                    </div>
+                  );
+                })}
+                {lnotes.length===0&&<div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:5,color:`${lane.accent}55`}}><div style={{fontSize:24}}>📌</div><div style={{fontSize:11}}>Click to open</div></div>}
+                {lnotes.length>4&&<div style={{position:"absolute",bottom:6,right:8,fontSize:10,color:`${lane.accent}99`,fontWeight:600}}>+{lnotes.length-4} more</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* modals */}
+      {noteModal&&<NoteModal lanes={lanes} defLane={noteModal.defLane} onOk={d=>addNote(d)} onCancel={()=>setNoteModal(null)}/>}
+      {laneModal&&<LaneModal onOk={addLane} onCancel={()=>setLaneModal(false)}/>}
+
+      {/* AI chat */}
+      {chatOpen&&(
+        <div style={{position:"fixed",bottom:80,left:"50%",transform:"translateX(-50%)",width:420,maxWidth:"calc(100vw - 32px)",background:"#1a1208",border:"1px solid #7a5c3099",borderRadius:16,boxShadow:"0 8px 40px #0009",display:"flex",flexDirection:"column",zIndex:6000,animation:"slideUp .25s cubic-bezier(.34,1.56,.64,1)",overflow:"hidden"}}>
+          <div style={{background:"linear-gradient(135deg,#2d1b69,#3b1f7a)",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <div style={{width:28,height:28,borderRadius:"50%",background:"linear-gradient(135deg,#7c3aed,#a855f7)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>✦</div>
+              <div><div style={{fontSize:13,fontWeight:600,color:"#e9d5ff"}}>AI Board Assistant</div><div style={{fontSize:10,color:"#9f7aea"}}>Ask anything · Command the board</div></div>
+            </div>
+            <button onClick={()=>setChatOpen(false)} style={{background:"rgba(255,255,255,0.1)",border:"none",borderRadius:8,width:28,height:28,color:"#c4b5fd",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+          </div>
+          <div style={{padding:"7px 12px",borderBottom:"1px solid #7a5c3033",display:"flex",gap:5,flexWrap:"wrap",background:"#160f04"}}>
+            {QUICK.map(q=><button key={q} onClick={()=>{setInp(q);setTimeout(sendMsg,50);}} style={{fontSize:10,background:"#2d1b6933",border:"1px solid #7c3aed44",borderRadius:12,padding:"3px 10px",color:"#c4b5fd",cursor:"pointer"}}>{q}</button>)}
+          </div>
+          <div ref={chatRef} style={{height:260,overflowY:"auto",padding:"12px",display:"flex",flexDirection:"column",gap:8,background:"#1a1208"}}>
+            {msgs.map((m,i)=>(
+              <div key={i} style={{display:"flex",justifyContent:m.role==="user"?"flex-end":"flex-start",alignItems:"flex-end",gap:6}}>
+                {m.role==="ai"&&<div style={{width:22,height:22,borderRadius:"50%",background:"linear-gradient(135deg,#7c3aed,#a855f7)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,flexShrink:0}}>✦</div>}
+                <div style={{maxWidth:"82%",padding:"8px 12px",borderRadius:m.role==="user"?"16px 16px 4px 16px":"16px 16px 16px 4px",background:m.role==="user"?"linear-gradient(135deg,#7c3aed,#a855f7)":"#2d2010",border:m.role==="ai"?"1px solid #7a5c3055":"none",fontSize:12,color:m.role==="user"?"#fff":"#e8d5b0",lineHeight:1.6,whiteSpace:"pre-wrap"}}>{m.text}</div>
+              </div>
+            ))}
+            {aiLoad&&(
+              <div style={{display:"flex",alignItems:"flex-end",gap:6}}>
+                <div style={{width:22,height:22,borderRadius:"50%",background:"linear-gradient(135deg,#7c3aed,#a855f7)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10}}>✦</div>
+                <div style={{padding:"10px 14px",borderRadius:"16px 16px 16px 4px",background:"#2d2010",border:"1px solid #7a5c3055"}}>
+                  <span style={{display:"flex",gap:4}}>{[0,1,2].map(i=><span key={i} style={{width:6,height:6,borderRadius:"50%",background:"#a855f7",display:"inline-block",animation:`bounce 1s ${i*0.18}s infinite`}}/>)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+          <div style={{padding:"10px 12px",borderTop:"1px solid #7a5c3055",background:"#160f04",display:"flex",gap:8,alignItems:"flex-end"}}>
+            <textarea ref={inpRef} value={inp} onChange={e=>setInp(e.target.value)}
+              onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMsg();}}}
+              placeholder="Type a command or question..." rows={2}
+              style={{flex:1,background:"#2d2010",border:"1px solid #7a5c3066",borderRadius:10,padding:"8px 11px",fontSize:13,color:"#e8d5b0",resize:"none",outline:"none",fontFamily:"inherit",lineHeight:1.5}}/>
+            <button onClick={sendMsg} disabled={aiLoad||!inp.trim()} style={{width:38,height:38,borderRadius:"50%",border:"none",flexShrink:0,background:inp.trim()?"linear-gradient(135deg,#7c3aed,#a855f7)":"#2d2010",color:"#fff",fontSize:16,cursor:inp.trim()?"pointer":"default",display:"flex",alignItems:"center",justifyContent:"center",transition:"all .2s"}}>↑</button>
+          </div>
+        </div>
+      )}
+
+      {/* AI button */}
+      <button onClick={()=>setChatOpen(p=>!p)} style={{position:"fixed",bottom:20,left:"50%",transform:`translateX(-50%) scale(${chatOpen?0.95:1})`,background:chatOpen?"#2d1b69":"linear-gradient(135deg,#7c3aed,#a855f7)",border:chatOpen?"1px solid #7c3aed":"none",borderRadius:28,padding:"10px 22px",display:"flex",alignItems:"center",gap:8,boxShadow:"0 4px 24px rgba(124,58,237,0.5)",cursor:"pointer",zIndex:6001,transition:"all .25s cubic-bezier(.34,1.56,.64,1)"}}>
+        <div style={{width:26,height:26,borderRadius:"50%",background:"rgba(255,255,255,0.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>{chatOpen?"✕":"✦"}</div>
+        <span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{chatOpen?"Close AI":"Ask AI"}</span>
+        {unread>0&&!chatOpen&&<div style={{position:"absolute",top:-4,right:-4,width:18,height:18,borderRadius:"50%",background:"#ef4444",border:"2px solid #2c2416",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:"#fff",fontWeight:700}}>{unread}</div>}
+      </button>
+
+      <style>{`
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.55}}
+        @keyframes popIn{from{transform:scale(0.65);opacity:0}to{transform:scale(1);opacity:1}}
+        @keyframes slideUp{from{transform:translateX(-50%) translateY(22px);opacity:0}to{transform:translateX(-50%) translateY(0);opacity:1}}
+        @keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+        @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+        @keyframes canvasIn{from{transform:scale(0.94);opacity:0}to{transform:scale(1);opacity:1}}
+        ::-webkit-scrollbar{width:4px;height:4px}
+        ::-webkit-scrollbar-track{background:#1a1208}
+        ::-webkit-scrollbar-thumb{background:#7a5c30;border-radius:2px}
+      `}</style>
+    </div>
+  );
+}
